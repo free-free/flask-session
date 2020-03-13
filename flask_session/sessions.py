@@ -166,7 +166,7 @@ class RedisSessionInterface(SessionInterface):
                 session_id = session.sid
             response.headers[app.config.get("SESSION_ID_NAME",
                 "X-Sess-Id")] = session_id
-            response.headers["X-sess-expires"] = expires
+            response.headers["X-Sess-Expires"] = expires
             return 
         domain = self.get_cookie_domain(app)
         path = self.get_cookie_path(app)
