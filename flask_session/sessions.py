@@ -78,6 +78,18 @@ class SessionInterface(FlaskSessionInterface):
         return Signer(app.secret_key, salt='flask-session',
                       key_derivation='hmac')
 
+    def _get_sid(self, app, request):
+        # If SESSION_HTTP_HEADER is defined in the configuration 
+        # then session id will be readed from http header part 
+        if app.config.get('SESSION_HTTP_HEADER'):
+            sess_id_name = app.config.get("SESSION_ID_NAME")
+            return request.headers.get(sess_id_name)
+        else:
+            #if SESSION_ID_NAME is defined, app.session_cookie_name will 
+            # overried.
+            app.session_cookie_name = app.config.get("SESSION_ID_NAME",
+                app.session_cookie_name)
+            return request.cookies.get(app.session_cookie_name)
 
 class NullSessionInterface(SessionInterface):
     """Used to open a :class:`flask.sessions.NullSession` instance.
@@ -112,7 +124,7 @@ class RedisSessionInterface(SessionInterface):
         self.permanent = permanent
 
     def open_session(self, app, request):
-        sid = request.cookies.get(app.session_cookie_name)
+        sid = self._get_sid(app, request)
         if not sid:
             sid = self._generate_sid()
             return self.session_class(sid=sid, permanent=self.permanent)
@@ -139,6 +151,23 @@ class RedisSessionInterface(SessionInterface):
         return self.session_class(sid=sid, permanent=self.permanent)
 
     def save_session(self, app, session, response):
+        if app.config.get("SESSION_HTTP_HEADER"):
+            if not session:
+                if session.modified:
+                    self.redis.delete(self.key_prefix + session.sid)
+                return
+            expires = self.get_expiration_time(app, session)
+            val = self.serializer.dumps(dict(session))
+            self.redis.setex(name=self.key_prefix + session.sid, value=val,
+                             time=total_seconds(app.permanent_session_lifetime))
+            if self.use_signer:
+                session_id = self._get_signer(app).sign(want_bytes(session.sid))
+            else:
+                session_id = session.sid
+            response.headers[app.config.get("SESSION_ID_NAME",
+                "X-Sess-Id")] = session_id
+            response.headers["X-sess-expires"] = expires
+            return 
         domain = self.get_cookie_domain(app)
         path = self.get_cookie_path(app)
         if not session:
